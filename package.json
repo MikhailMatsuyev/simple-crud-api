@@ -6,19 +6,24 @@
   "scripts": {
     "start:dev": "ts-node-dev src/server.ts",
     "start:prod": "tsc && node dist/server.js",
-    "start:multi": "tsc && node dist/cluster.js",
-    "test": "jest",
+    "add-10-users": "ts-node src/scripts/add10Users.ts",
+    "test": "jest --verbose",
+    "test:watch": "jest --watch",
+    "add-user": "ts-node src/scripts/addUser.ts",
+    "delete-user": "ts-node src/scripts/deleteUser.ts",
+    "update-user": "ts-node src/scripts/updateUser.ts",
+    "list-users": "ts-node src/scripts/listUsers.ts",
     "build": "tsc",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
+    "dotenv": "^16.6.1",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/jest": "^29.5.5",
-    "@types/node": "^20.4.5",
+    "@types/node": "^20.19.24",
     "@types/uuid": "^9.0.2",
     "@typescript-eslint/eslint-plugin": "^6.2.0",
     "@typescript-eslint/parser": "^6.2.0",
