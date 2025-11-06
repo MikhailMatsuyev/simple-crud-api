@@ -3,127 +3,195 @@ import { handleRequest } from '../src/app';
 import { clearUsers } from '../src/controllers/usersController';
 
 const PORT = 4001;
-const BASE_URL = `http://localhost:${PORT}/api/users`;
-
 const server = createServer(handleRequest);
 
+// Вспомогательная функция для HTTP запросов
+const makeRequest = (
+    method: string,
+    path: string,
+    data?: any
+): Promise<{ status: number; body: any }> => {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'localhost',
+            port: PORT,
+            path: path,
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        };
+
+        const req = require('http').request(options, (res: any) => {
+            let body = '';
+
+            res.on('data', (chunk: Buffer) => {
+                body += chunk.toString();
+            });
+
+            res.on('end', () => {
+                resolve({
+                    status: res.statusCode,
+                    body: body ? JSON.parse(body) : null,
+                });
+            });
+        });
+
+        req.on('error', (err: Error) => {
+            reject(err);
+        });
+
+        if (data) {
+            req.write(JSON.stringify(data));
+        }
+
+        req.end();
+    });
+};
+
 beforeAll((done) => {
-  server.listen(PORT, done);
+    server.listen(PORT, () => {
+        console.log(`Test server running on port ${PORT}`);
+        done();
+    });
 });
 
 afterAll((done) => {
-  server.close(done);
+    server.close(() => {
+        console.log('Test server closed');
+        done();
+    });
 });
 
 beforeEach(() => {
-  clearUsers();
+    clearUsers();
 });
 
-const makeRequest = (method: string, url: string, data?: any): Promise<any> => {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'localhost',
-      port: PORT,
-      path: url,
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    };
-
-    const req = require('http').request(options, (res: any) => {
-      let body = '';
-
-      res.on('data', (chunk: Buffer) => {
-        body += chunk.toString();
-      });
-
-      res.on('end', () => {
-        resolve({
-          status: res.statusCode,
-          body: body ? JSON.parse(body) : null,
+describe('CRUD API Integration Tests', () => {
+    describe('Scenario 1: Complete user lifecycle', () => {
+        test('GET /api/users should return empty array initially', async () => {
+            const response = await makeRequest('GET', '/api/users');
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual([]);
         });
-      });
+
+        test('POST /api/users should create a new user', async () => {
+            const newUser = {
+                username: 'John Doe',
+                age: 30,
+                hobbies: ['reading', 'swimming'],
+            };
+
+            const response = await makeRequest('POST', '/api/users', newUser);
+            expect(response.status).toBe(201);
+            expect(response.body).toMatchObject(newUser);
+            expect(response.body.id).toBeDefined();
+            expect(typeof response.body.id).toBe('string');
+        });
+
+        test('GET /api/users/{userId} should return created user', async () => {
+            // First create a user
+            const newUser = {
+                username: 'John Doe',
+                age: 30,
+                hobbies: ['reading', 'swimming'],
+            };
+
+            const createResponse = await makeRequest('POST', '/api/users', newUser);
+            const userId = createResponse.body.id;
+
+            // Then get the user by ID
+            const getResponse = await makeRequest('GET', `/api/users/${userId}`);
+            expect(getResponse.status).toBe(200);
+            expect(getResponse.body.id).toBe(userId);
+            expect(getResponse.body.username).toBe('John Doe');
+            expect(getResponse.body.age).toBe(30);
+            expect(getResponse.body.hobbies).toEqual(['reading', 'swimming']);
+        });
+
+        test('PUT /api/users/{userId} should update the user', async () => {
+            // First create a user
+            const newUser = {
+                username: 'John Doe',
+                age: 30,
+                hobbies: ['reading', 'swimming'],
+            };
+
+            const createResponse = await makeRequest('POST', '/api/users', newUser);
+            const userId = createResponse.body.id;
+
+            // Then update the user
+            const updatedUser = {
+                username: 'John Smith',
+                age: 31,
+                hobbies: ['reading', 'swimming', 'coding'],
+            };
+
+            const updateResponse = await makeRequest('PUT', `/api/users/${userId}`, updatedUser);
+            expect(updateResponse.status).toBe(200);
+            expect(updateResponse.body).toMatchObject(updatedUser);
+            expect(updateResponse.body.id).toBe(userId);
+        });
+
+        test('DELETE /api/users/{userId} should delete the user', async () => {
+            // First create a user
+            const newUser = {
+                username: 'John Doe',
+                age: 30,
+                hobbies: ['reading', 'swimming'],
+            };
+
+            const createResponse = await makeRequest('POST', '/api/users', newUser);
+            const userId = createResponse.body.id;
+
+            // Then delete the user
+            const deleteResponse = await makeRequest('DELETE', `/api/users/${userId}`);
+            expect(deleteResponse.status).toBe(204);
+            expect(deleteResponse.body).toBeNull();
+        });
+
+        test('GET /api/users/{userId} should return 404 after deletion', async () => {
+            // First create and then delete a user
+            const newUser = {
+                username: 'John Doe',
+                age: 30,
+                hobbies: ['reading', 'swimming'],
+            };
+
+            const createResponse = await makeRequest('POST', '/api/users', newUser);
+            const userId = createResponse.body.id;
+            await makeRequest('DELETE', `/api/users/${userId}`);
+
+            // Then try to get the deleted user
+            const getResponse = await makeRequest('GET', `/api/users/${userId}`);
+            expect(getResponse.status).toBe(404);
+            expect(getResponse.body.message).toContain('User not found');
+        });
     });
 
-    req.on('error', reject);
+    describe('Scenario 2: Error handling', () => {
+        test('GET /api/users/{invalidId} should return 400 for invalid UUID', async () => {
+            const response = await makeRequest('GET', '/api/users/invalid-id');
+            expect(response.status).toBe(400);
+            expect(response.body.message).toContain('Invalid user ID');
+        });
 
-    if (data) {
-      req.write(JSON.stringify(data));
-    }
+        test('POST /api/users should return 400 for invalid data', async () => {
+            const invalidUser = {
+                username: '', // Invalid: empty string
+                age: -5, // Invalid: negative age
+                hobbies: 'not-an-array', // Invalid: not an array
+            };
 
-    req.end();
-  });
-};
+            const response = await makeRequest('POST', '/api/users', invalidUser);
+            expect(response.status).toBe(400);
+            expect(response.body.message).toBeDefined();
+        });
 
-describe('CRUD API', () => {
-  test('Scenario 1: Complete user lifecycle', async () => {
-    // Get all users (empty array)
-    let response = await makeRequest('GET', '/api/users');
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual([]);
-
-    // Create new user
-    const newUser = {
-      username: 'John Doe',
-      age: 30,
-      hobbies: ['reading', 'swimming'],
-    };
-
-    response = await makeRequest('POST', '/api/users', newUser);
-    expect(response.status).toBe(201);
-    expect(response.body).toMatchObject(newUser);
-    expect(response.body.id).toBeDefined();
-
-    const userId = response.body.id;
-
-    // Get created user by ID
-    response = await makeRequest('GET', `/api/users/${userId}`);
-    expect(response.status).toBe(200);
-    expect(response.body.id).toBe(userId);
-    expect(response.body.username).toBe('John Doe');
-
-    // Update the user
-    const updatedUser = {
-      username: 'John Smith',
-      age: 31,
-      hobbies: ['reading', 'swimming', 'coding'],
-    };
-
-    response = await makeRequest('PUT', `/api/users/${userId}`, updatedUser);
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject(updatedUser);
-
-    // Delete the user
-    response = await makeRequest('DELETE', `/api/users/${userId}`);
-    expect(response.status).toBe(204);
-
-    // Try to get deleted user
-    response = await makeRequest('GET', `/api/users/${userId}`);
-    expect(response.status).toBe(404);
-  });
-
-  test('Scenario 2: Invalid user ID handling', async () => {
-    const response = await makeRequest('GET', '/api/users/invalid-id');
-    expect(response.status).toBe(400);
-    expect(response.body.message).toContain('Invalid user ID');
-  });
-
-  test('Scenario 3: Invalid user data validation', async () => {
-    const invalidUser = {
-      username: '', // Invalid: empty string
-      age: -5, // Invalid: negative age
-      hobbies: 'not-an-array', // Invalid: not an array
-    };
-
-    const response = await makeRequest('POST', '/api/users', invalidUser);
-    expect(response.status).toBe(400);
-    expect(response.body.message).toBeDefined();
-  });
-
-  test('Scenario 4: Non-existing endpoint', async () => {
-    const response = await makeRequest('GET', '/api/non-existing');
-    expect(response.status).toBe(404);
-    expect(response.body.message).toContain('Endpoint not found');
-  });
+        test('GET non-existing endpoint should return 404', async () => {
+            const response = await makeRequest('GET', '/api/non-existing');
+            expect(response.status).toBe(404);
+            expect(response.body.message).toContain('Endpoint not found');
+        });
+    });
 });
